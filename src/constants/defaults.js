@@ -43,6 +43,21 @@ export const emptyCompany = {
   address: ""
 };
 
+export const emptyUser = {
+  username: "",
+  password: "",
+  fullName: "",
+  roleId: "",
+  pageBotIds: [],
+  enabled: true
+};
+
+export const emptyRole = {
+  name: "",
+  slug: "",
+  permissions: []
+};
+
 export const emptyPromotion = {
   companyId: "",
   name: "",

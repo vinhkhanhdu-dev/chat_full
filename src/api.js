@@ -113,7 +113,6 @@ export const api = {
     payload._id
       ? request(`/orders/${payload._id}`, { method: "PUT", body: JSON.stringify(payload) })
       : request("/orders", { method: "POST", body: JSON.stringify(payload) }),
-  deleteOrder: (id) => request(`/orders/${id}`, { method: "DELETE" }),
   getRules: () => request("/rules"),
   getFaqs: (pageBotId = "") => request(pageBotId ? `/faqs?pageBotId=${pageBotId}` : "/faqs"),
   saveFaq: (payload) =>
@@ -121,6 +120,19 @@ export const api = {
       ? request(`/faqs/${payload._id}`, { method: "PUT", body: JSON.stringify(payload) })
       : request("/faqs", { method: "POST", body: JSON.stringify(payload) }),
   deleteFaq: (id) => request(`/faqs/${id}`, { method: "DELETE" }),
+  getUsers: () => request("/users"),
+  saveUser: (payload) =>
+    payload._id
+      ? request(`/users/${payload._id}`, { method: "PUT", body: JSON.stringify(payload) })
+      : request("/users", { method: "POST", body: JSON.stringify(payload) }),
+  getRoles: () => request("/roles"),
+  getPermissions: () => request("/roles/permissions"),
+  saveRole: (payload) =>
+    payload._id
+      ? request(`/roles/${payload._id}`, { method: "PUT", body: JSON.stringify(payload) })
+      : request("/roles", { method: "POST", body: JSON.stringify(payload) }),
+  getOperationsReport: ({ fromDate, toDate }) =>
+    request(`/reports/operations?fromDate=${encodeURIComponent(fromDate)}&toDate=${encodeURIComponent(toDate)}`),
   saveRule: (payload) =>
     payload._id
       ? request(`/rules/${payload._id}`, { method: "PUT", body: JSON.stringify(payload) })

@@ -26,12 +26,14 @@ import {
   emptyFaq,
   emptyPageBot,
   emptyPromotion,
+  emptyRole,
   emptyRule,
-  emptySimulatorDraft
+  emptySimulatorDraft,
+  emptyUser
 } from "./constants/defaults.js";
 import { DesktopSidebar, MobileNavigation, validTabs } from "./components/navigation.jsx";
-import { Avatar, Editor, EmptyState, Input, PageAvatar, Panel, StatusBadge, Textarea, ToggleSwitch } from "./components/ui.jsx";
-import { FaqsScreen, RulesScreen, SettingsScreen } from "./components/screens/ConfigurationScreens.jsx";
+import { Avatar, Editor, EmptyState, Input, PageAvatar, Panel, Textarea, ToggleSwitch } from "./components/ui.jsx";
+import { FaqsScreen, RolesScreen, RulesScreen, SettingsScreen, UsersScreen } from "./components/screens/ConfigurationScreens.jsx";
 import {
   companyNameById,
   customerDisplayName,
@@ -52,6 +54,18 @@ function getRouteTab() {
   return validTabs.has(route) ? route : "bots";
 }
 
+const tabPermissions = {
+  bots: "pages.manage",
+  companies: "companies.manage",
+  "consultation-scripts": "scripts.manage",
+  promotions: "promotions.manage",
+  rules: "rules.manage",
+  settings: "settings.manage",
+  users: "users.manage",
+  roles: "roles.manage",
+  reports: "reports.view"
+};
+
 export function App() {
   const [tab, setTab] = useState(getRouteTab);
   const [authUser, setAuthUser] = useState(null);
@@ -67,6 +81,14 @@ export function App() {
   const [companies, setCompanies] = useState([]);
   const [promotions, setPromotions] = useState([]);
   const [consultationScripts, setConsultationScripts] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [roles, setRoles] = useState([]);
+  const [permissions, setPermissions] = useState([]);
+  const [reportRange, setReportRange] = useState(() => {
+    const today = getBangkokDayKey(new Date());
+    return { fromDate: today, toDate: today };
+  });
+  const [operationsReport, setOperationsReport] = useState(null);
   const [runtimeSettings, setRuntimeSettings] = useState(defaultRuntimeSettings);
   const [simulatorCases, setSimulatorCases] = useState([]);
   const [simulatorDraft, setSimulatorDraft] = useState(emptySimulatorDraft);
@@ -78,6 +100,8 @@ export function App() {
   const [editingCompany, setEditingCompany] = useState(emptyCompany);
   const [editingPromotion, setEditingPromotion] = useState(emptyPromotion);
   const [editingConsultationScript, setEditingConsultationScript] = useState(emptyConsultationScript);
+  const [editingUser, setEditingUser] = useState(emptyUser);
+  const [editingRole, setEditingRole] = useState(emptyRole);
   const [selectedMessagePageId, setSelectedMessagePageId] = useState("");
   const [selectedCustomerPsid, setSelectedCustomerPsid] = useState("");
   const [manualReplyDraft, setManualReplyDraft] = useState("");
@@ -100,13 +124,19 @@ export function App() {
   const [faqSearch, setFaqSearch] = useState("");
   const [now, setNow] = useState(() => Date.now());
   const [messagesRefreshing, setMessagesRefreshing] = useState(false);
+  const [contentRefreshing, setContentRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
   const [messagesLastRefreshedAt, setMessagesLastRefreshedAt] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("system-theme") || "light");
   const [showMobileHeader, setShowMobileHeader] = useState(
     () => localStorage.getItem("show-mobile-header") !== "false"
   );
+  const [mobileNavVariant, setMobileNavVariant] = useState(
+    () => localStorage.getItem("mobile-nav-variant") || "v1"
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [toasts, setToasts] = useState([]);
   const [openGroups, setOpenGroups] = useState({
     operations: true,
     configuration: true,
@@ -116,6 +146,27 @@ export function App() {
   const latestMessageRef = useRef(null);
   const messageScrollRef = useRef(null);
   const bottomRefreshArmedRef = useRef(true);
+  const contentTouchStartYRef = useRef(null);
+  const can = (permission) => userCan(authUser, permission);
+
+  function notify(type, message) {
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts((current) => [...current, { id, type, message }]);
+    window.setTimeout(() => {
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 3200);
+  }
+
+  async function runAction(action, { success, fallbackError = "Thao tác thất bại." } = {}) {
+    try {
+      const result = await action();
+      if (success) notify("success", success);
+      return result;
+    } catch (error) {
+      notify("error", getErrorMessage(error, fallbackError));
+      throw error;
+    }
+  }
 
   useEffect(() => {
     onUnauthorized(() => {
@@ -146,18 +197,21 @@ export function App() {
     }
 
     Promise.all([
-      api.getPageBots(),
-      api.getMessages(),
-      api.getOrders(),
-      api.getRules(),
-      api.getContexts(),
-      api.getFaqs(),
-      api.getCompanies(),
-      api.getPromotions(),
-      api.getConsultationScripts(),
-      api.getSystemSettings(),
-      api.getSimulatorCases()
-    ]).then(([bots, logs, orderList, ruleList, contextList, faqList, companyList, promotionList, consultationScriptList, settings, cases]) => {
+      can("pages.view") ? api.getPageBots() : Promise.resolve([]),
+      can("messages.view") ? api.getMessages() : Promise.resolve([]),
+      can("orders.view") ? api.getOrders() : Promise.resolve([]),
+      can("rules.manage") ? api.getRules() : Promise.resolve([]),
+      can("contexts.view") ? api.getContexts() : Promise.resolve([]),
+      can("faqs.view") ? api.getFaqs() : Promise.resolve([]),
+      can("companies.manage") ? api.getCompanies() : Promise.resolve([]),
+      can("promotions.manage") ? api.getPromotions() : Promise.resolve([]),
+      can("scripts.manage") ? api.getConsultationScripts() : Promise.resolve([]),
+      can("settings.manage") ? api.getSystemSettings() : Promise.resolve(defaultRuntimeSettings),
+      can("users.manage") ? api.getUsers() : Promise.resolve([]),
+      can("roles.manage") ? api.getRoles() : Promise.resolve([]),
+      can("roles.manage") ? api.getPermissions() : Promise.resolve([]),
+      can("simulator.use") ? api.getSimulatorCases() : Promise.resolve([])
+    ]).then(([bots, logs, orderList, ruleList, contextList, faqList, companyList, promotionList, consultationScriptList, settings, userList, roleList, permissionList, cases]) => {
         setPageBots(bots);
         setMessages(logs);
         setMessagesLastRefreshedAt(new Date());
@@ -168,6 +222,9 @@ export function App() {
         setCompanies(companyList);
         setPromotions(promotionList);
         setConsultationScripts(consultationScriptList);
+        setUsers(userList);
+        setRoles(roleList);
+        setPermissions(permissionList);
         setSimulatorCases(cases);
         setRuntimeSettings({
           openaiModel: settings.openaiModel || defaultRuntimeSettings.openaiModel,
@@ -212,6 +269,10 @@ export function App() {
     if (!authUser) {
       return;
     }
+    if (tabPermissions[tab] && !can(tabPermissions[tab])) {
+      window.location.hash = "#/admin/messages";
+      return;
+    }
     refreshActiveTabData(tab);
   }, [authUser, tab]);
 
@@ -236,6 +297,10 @@ export function App() {
   useEffect(() => {
     localStorage.setItem("show-mobile-header", showMobileHeader ? "true" : "false");
   }, [showMobileHeader]);
+
+  useEffect(() => {
+    localStorage.setItem("mobile-nav-variant", mobileNavVariant);
+  }, [mobileNavVariant]);
 
   useEffect(() => {
     const intervalId = setInterval(() => setNow(Date.now()), 30000);
@@ -361,31 +426,31 @@ export function App() {
 
   const orderSummaryByPage = useMemo(() => {
     return orders.reduce((acc, order) => {
-      const key = String(order.pageBotId);
-      acc[key] ||= { pageBotId: key, count: 0, totalAmount: 0 };
+      const key = String(order.pageId);
+      acc[key] ||= { pageId: key, count: 0, total: 0 };
       acc[key].count += 1;
-      acc[key].totalAmount += order.totalAmount || 0;
+      acc[key].total += order.total || 0;
       return acc;
     }, {});
   }, [orders]);
 
   const orderSummaryByCustomer = useMemo(() => {
     return orders.reduce((acc, order) => {
-      const key = `${order.pageBotId}:${order.customerPsid}`;
+      const key = `${order.pageId}:${order.customerId}`;
       acc[key] ||= {
         key,
-        pageBotId: String(order.pageBotId),
-        customerPsid: order.customerPsid,
+        pageId: String(order.pageId),
+        customerId: order.customerId,
         customerName: customerDisplayName({
-          customerPsid: order.customerPsid,
+          customerPsid: order.customerId,
           profile: order.customerProfile
         }),
         profile: order.customerProfile,
         count: 0,
-        totalAmount: 0
+        total: 0
       };
       acc[key].count += 1;
-      acc[key].totalAmount += order.totalAmount || 0;
+      acc[key].total += order.total || 0;
       return acc;
     }, {});
   }, [orders]);
@@ -393,15 +458,15 @@ export function App() {
   const filteredOrders = useMemo(
     () =>
       orders.filter((order) => {
-        const matchesPage = !orderPageFilter || String(order.pageBotId) === orderPageFilter;
+        const matchesPage = !orderPageFilter || String(order.pageId) === orderPageFilter;
         const matchesCustomer =
-          !orderCustomerFilter || `${order.pageBotId}:${order.customerPsid}` === orderCustomerFilter;
+          !orderCustomerFilter || `${order.pageId}:${order.customerId}` === orderCustomerFilter;
         return matchesPage && matchesCustomer;
       }),
     [orders, orderPageFilter, orderCustomerFilter]
   );
 
-  const selectedOrderPageId = orderPageFilter || pageBots[0]?._id || "";
+  const selectedOrderPageId = orderPageFilter || pageBots[0]?.pageId || "";
   const filteredOrderPageBots = useMemo(() => {
     const keyword = orderPageSearch.trim().toLowerCase();
     return pageBots.filter((bot) => {
@@ -416,7 +481,7 @@ export function App() {
   }, [companies, orderPageCompanyFilter, orderPageSearch, pageBots]);
   const selectedPageOrderSummary = orderSummaryByPage[selectedOrderPageId];
   const selectedPageCustomers = Object.values(orderSummaryByCustomer).filter(
-    (summary) => summary.pageBotId === String(selectedOrderPageId)
+    (summary) => summary.pageId === String(selectedOrderPageId)
   );
 
   const selectedContext = useMemo(
@@ -484,7 +549,7 @@ export function App() {
   }, [filteredMessagePageBots, selectedMessagePageId, tab]);
 
   async function saveBot() {
-    const saved = await api.savePageBot(editingBot);
+    const saved = await runAction(() => api.savePageBot(editingBot), { success: "Đã lưu page bot." });
     setPageBots((current) => {
       const exists = current.some((bot) => bot._id === saved._id);
       return exists ? current.map((bot) => (bot._id === saved._id ? saved : bot)) : [saved, ...current];
@@ -493,20 +558,20 @@ export function App() {
   }
 
   async function removeBot(id) {
-    await api.deletePageBot(id);
+    await runAction(() => api.deletePageBot(id), { success: "Đã xóa page bot." });
     setPageBots((current) => current.filter((bot) => bot._id !== id));
     setEditingBot(emptyPageBot);
   }
 
   async function syncPageBotProfile() {
     if (!editingBot._id) return;
-    const synced = await api.syncPageBotProfile(editingBot._id);
+    const synced = await runAction(() => api.syncPageBotProfile(editingBot._id), { success: "Đã đồng bộ thông tin page." });
     setEditingBot(synced);
     setPageBots((current) => current.map((bot) => (bot._id === synced._id ? synced : bot)));
   }
 
   async function saveRule() {
-    const saved = await api.saveRule(editingRule);
+    const saved = await runAction(() => api.saveRule(editingRule), { success: "Đã lưu quy tắc." });
     setRules((current) => {
       const exists = current.some((rule) => rule._id === saved._id);
       return exists ? current.map((rule) => (rule._id === saved._id ? saved : rule)) : [saved, ...current];
@@ -515,14 +580,14 @@ export function App() {
   }
 
   async function removeRule(id) {
-    await api.deleteRule(id);
+    await runAction(() => api.deleteRule(id), { success: "Đã xóa quy tắc." });
     setRules((current) => current.filter((rule) => rule._id !== id));
     setEditingRule(emptyRule);
   }
 
   async function saveContext() {
     if (!selectedContext) return;
-    const saved = await api.saveContext(selectedContext._id, { memorySummary: contextDraft });
+    const saved = await runAction(() => api.saveContext(selectedContext._id, { memorySummary: contextDraft }), { success: "Đã lưu memory." });
     setContexts((current) =>
       current.map((context) =>
         context._id === saved._id ? { ...context, memorySummary: saved.memorySummary } : context
@@ -532,7 +597,7 @@ export function App() {
 
   async function resetContext() {
     if (!selectedContext) return;
-    const saved = await api.resetContext(selectedContext._id);
+    const saved = await runAction(() => api.resetContext(selectedContext._id), { success: "Đã xóa memory tạm." });
     setContexts((current) =>
       current.map((context) =>
         context._id === saved._id ? { ...context, memorySummary: "", lastResponseId: "" } : context
@@ -547,7 +612,7 @@ export function App() {
     );
     if (!confirmed) return;
 
-    await api.resetAllContexts();
+    await runAction(() => api.resetAllContexts(), { success: "Đã xóa toàn bộ memory tạm." });
     setContexts((current) =>
       current.map((context) => ({
         ...context,
@@ -568,7 +633,7 @@ export function App() {
             .map((tag) => tag.trim())
             .filter(Boolean)
     };
-    const saved = await api.saveFaq(payload);
+    const saved = await runAction(() => api.saveFaq(payload), { success: "Đã lưu FAQ." });
     setFaqs((current) => {
       const exists = current.some((faq) => faq._id === saved._id);
       return exists ? current.map((faq) => (faq._id === saved._id ? saved : faq)) : [saved, ...current];
@@ -577,13 +642,13 @@ export function App() {
   }
 
   async function removeFaq(id) {
-    await api.deleteFaq(id);
+    await runAction(() => api.deleteFaq(id), { success: "Đã xóa FAQ." });
     setFaqs((current) => current.filter((faq) => faq._id !== id));
     setEditingFaq(emptyFaq);
   }
 
   async function saveCompany() {
-    const saved = await api.saveCompany(editingCompany);
+    const saved = await runAction(() => api.saveCompany(editingCompany), { success: "Đã lưu công ty." });
     setCompanies((current) => {
       const exists = current.some((company) => company._id === saved._id);
       return exists
@@ -594,13 +659,13 @@ export function App() {
   }
 
   async function removeCompany(id) {
-    await api.deleteCompany(id);
+    await runAction(() => api.deleteCompany(id), { success: "Đã xóa công ty." });
     setCompanies((current) => current.filter((company) => company._id !== id));
     setEditingCompany(emptyCompany);
   }
 
   async function saveConsultationScript() {
-    const saved = await api.saveConsultationScript(editingConsultationScript);
+    const saved = await runAction(() => api.saveConsultationScript(editingConsultationScript), { success: "Đã lưu kịch bản tư vấn." });
     setConsultationScripts((current) => {
       const exists = current.some((script) => script._id === saved._id);
       return exists
@@ -613,8 +678,26 @@ export function App() {
     });
   }
 
+  async function saveUser() {
+    const saved = await runAction(() => api.saveUser(editingUser), { success: "Đã lưu tài khoản." });
+    setUsers((current) => {
+      const exists = current.some((user) => user._id === saved._id);
+      return exists ? current.map((user) => (user._id === saved._id ? saved : user)) : [saved, ...current];
+    });
+    setEditingUser(emptyUser);
+  }
+
+  async function saveRole() {
+    const saved = await runAction(() => api.saveRole(editingRole), { success: "Đã lưu vai trò." });
+    setRoles((current) => {
+      const exists = current.some((role) => role._id === saved._id);
+      return exists ? current.map((role) => (role._id === saved._id ? saved : role)) : [saved, ...current];
+    });
+    setEditingRole(emptyRole);
+  }
+
   async function removeConsultationScript(id) {
-    await api.deleteConsultationScript(id);
+    await runAction(() => api.deleteConsultationScript(id), { success: "Đã xóa kịch bản tư vấn." });
     setConsultationScripts((current) => current.filter((script) => script._id !== id));
     setEditingConsultationScript(emptyConsultationScript);
   }
@@ -639,11 +722,14 @@ export function App() {
       setManualReplyDraft("");
       setManualReplyAttachment(null);
       setManualReplyStatus(null);
+      notify("success", "Đã gửi tin nhắn.");
     } catch (error) {
+      const message = getErrorMessage(error, "Gửi tin nhắn thất bại. Vui lòng thử lại.");
       setManualReplyStatus({
         type: "error",
-        text: error?.message || "Gửi tin nhắn thất bại. Vui lòng thử lại."
+        text: message
       });
+      notify("error", message);
     } finally {
       setManualReplySending(false);
     }
@@ -669,6 +755,9 @@ export function App() {
   }
 
   async function refreshActiveTabData(tabId) {
+    if (tabPermissions[tabId] && !can(tabPermissions[tabId])) {
+      return;
+    }
     if (tabId === "messages") {
       await refreshMessageData();
       return;
@@ -769,6 +858,23 @@ export function App() {
         aggregateCustomerMessageDelayMs:
           settings.aggregateCustomerMessageDelayMs ?? defaultRuntimeSettings.aggregateCustomerMessageDelayMs
       });
+      return;
+    }
+
+    if (tabId === "users") {
+      setUsers(await api.getUsers());
+      return;
+    }
+
+    if (tabId === "roles") {
+      const [roleList, permissionList] = await Promise.all([api.getRoles(), api.getPermissions()]);
+      setRoles(roleList);
+      setPermissions(permissionList);
+      return;
+    }
+
+    if (tabId === "reports") {
+      setOperationsReport(await api.getOperationsReport(reportRange));
     }
   }
 
@@ -812,15 +918,47 @@ export function App() {
     }
   }
 
+  function handleContentTouchStart(event) {
+    if (window.innerWidth > 900 || event.currentTarget.scrollTop > 0) return;
+    contentTouchStartYRef.current = event.touches[0]?.clientY ?? null;
+  }
+
+  function handleContentTouchMove(event) {
+    if (window.innerWidth > 900 || contentTouchStartYRef.current == null || event.currentTarget.scrollTop > 0) return;
+    const currentY = event.touches[0]?.clientY ?? contentTouchStartYRef.current;
+    const distance = Math.max(0, currentY - contentTouchStartYRef.current);
+    if (distance > 0) {
+      setPullDistance(Math.min(distance, 96));
+    }
+  }
+
+  async function handleContentTouchEnd() {
+    if (window.innerWidth > 900) return;
+    const shouldRefresh = pullDistance >= 72 && !contentRefreshing;
+    contentTouchStartYRef.current = null;
+    setPullDistance(0);
+    if (!shouldRefresh) return;
+
+    try {
+      setContentRefreshing(true);
+      await refreshActiveTabData(tab);
+      notify("success", "Đã làm mới dữ liệu.");
+    } catch (error) {
+      notify("error", getErrorMessage(error, "Không thể làm mới dữ liệu."));
+    } finally {
+      setContentRefreshing(false);
+    }
+  }
+
   async function resumeBotReply() {
     if (!selectedMessagePageId || !selectedCustomerPsid) {
       return;
     }
 
-    const saved = await api.resumeBotReply({
+    const saved = await runAction(() => api.resumeBotReply({
       pageBotId: selectedMessagePageId,
       customerPsid: selectedCustomerPsid
-    });
+    }), { success: "Đã cho BOT tiếp tục trả lời." });
     upsertContext(saved);
   }
 
@@ -831,7 +969,7 @@ export function App() {
 
     try {
       setSimulatorRunning(true);
-      const result = await api.runSimulatorEvent(simulatorDraft);
+      const result = await runAction(() => api.runSimulatorEvent(simulatorDraft), { success: "Đã chạy giả lập." });
       setSimulatorResult(result);
       if (simulatorDraft.type !== "human_echo") {
         setSimulatorDraft((current) => ({ ...current, text: "" }));
@@ -870,8 +1008,41 @@ export function App() {
     });
   }
 
+  async function loadOperationsReport() {
+    const report = await runAction(() => api.getOperationsReport(reportRange), { success: "Đã tải báo cáo." });
+    setOperationsReport(report);
+  }
+
+  function exportReport(type, format) {
+    if (!operationsReport) return;
+    const isMessages = type === "messages";
+    const rows = isMessages
+      ? operationsReport.messages.map((message) => ({
+          ThoiGian: formatDateTime(message.createdAt),
+          Page: message.pageName,
+          KhachHang: customerDisplayName({ customerPsid: message.customerPsid, profile: message.customerProfile }),
+          Huong: message.direction,
+          NguoiGui: message.senderType,
+          NoiDung: message.text
+        }))
+      : operationsReport.orders.map((order) => ({
+          ThoiGian: formatDateTime(order.createdAt),
+          Page: order.pageName,
+          KhachHang: order.customerId,
+          SoDienThoai: order.phoneNumber,
+          DiaChi: order.address,
+          TongTien: order.total,
+          GhiChu: order.note
+        }));
+    const baseName = `${isMessages ? "lich-su-tin-nhan" : "don-hang"}-${reportRange.fromDate}-${reportRange.toDate}`;
+    if (format === "json") downloadJson(rows, `${baseName}.json`);
+    else if (format === "txt") downloadText(rows, `${baseName}.txt`);
+    else downloadCsv(rows, `${baseName}.csv`);
+    notify("success", `Đã xuất ${isMessages ? "lịch sử tin nhắn" : "đơn hàng"} dạng ${format.toUpperCase()}.`);
+  }
+
   async function savePromotion() {
-    const saved = await api.savePromotion(editingPromotion);
+    const saved = await runAction(() => api.savePromotion(editingPromotion), { success: "Đã lưu khuyến mãi." });
     setPromotions((current) => {
       const exists = current.some((promotion) => promotion._id === saved._id);
       return exists
@@ -882,13 +1053,13 @@ export function App() {
   }
 
   async function removePromotion(id) {
-    await api.deletePromotion(id);
+    await runAction(() => api.deletePromotion(id), { success: "Đã xóa khuyến mãi." });
     setPromotions((current) => current.filter((promotion) => promotion._id !== id));
     setEditingPromotion(emptyPromotion);
   }
 
   async function saveRuntimeSettings() {
-    const saved = await api.saveSystemSettings(runtimeSettings);
+    const saved = await runAction(() => api.saveSystemSettings(runtimeSettings), { success: "Đã lưu cấu hình hệ thống." });
     setRuntimeSettings({
       openaiModel: saved.openaiModel,
       maxOutputTokens: saved.maxOutputTokens,
@@ -941,14 +1112,16 @@ export function App() {
     }));
   }
 
+  const canEditSelectedOrder = selectedOrder ? isSameLocalDay(selectedOrder.createdAt) : false;
+
   async function saveSelectedOrder() {
-    if (!orderDraft?._id) {
+    if (!orderDraft?._id || !canEditSelectedOrder) {
       return;
     }
 
     const payload = {
       ...orderDraft,
-      totalAmount: Number(orderDraft.totalAmount) || 0,
+      total: Number(orderDraft.total) || 0,
       items: (orderDraft.items || [])
         .filter((item) => item.name.trim())
         .map((item) => ({
@@ -957,24 +1130,18 @@ export function App() {
           unitPrice: Number(item.unitPrice) || 0
         }))
     };
-    const saved = await api.saveOrder(payload);
-    const merged = { ...saved, customerProfile: selectedOrder.customerProfile };
-    setOrders((current) => current.map((order) => (order._id === saved._id ? merged : order)));
-    setSelectedOrder(merged);
-    setOrderDraft({
-      ...merged,
-      items: merged.items?.length ? merged.items.map((item) => ({ ...item })) : [{ name: "", quantity: 1, unitPrice: 0 }]
-    });
-  }
-
-  async function deleteSelectedOrder() {
-    if (!selectedOrder?._id || !window.confirm("Xóa đơn hàng này?")) {
-      return;
+    try {
+      const saved = await runAction(() => api.saveOrder(payload), { success: "Đã cập nhật đơn hàng." });
+      const merged = { ...saved, customerProfile: selectedOrder.customerProfile };
+      setOrders((current) => current.map((order) => (order._id === saved._id ? merged : order)));
+      setSelectedOrder(merged);
+      setOrderDraft({
+        ...merged,
+        items: merged.items?.length ? merged.items.map((item) => ({ ...item })) : [{ name: "", quantity: 1, unitPrice: 0 }]
+      });
+    } catch (error) {
+      notify("error", getErrorMessage(error, "Không thể cập nhật đơn hàng."));
     }
-
-    await api.deleteOrder(selectedOrder._id);
-    setOrders((current) => current.filter((order) => order._id !== selectedOrder._id));
-    closeOrderDialog();
   }
 
   function updatePromotionVersion(index, patch) {
@@ -1038,6 +1205,7 @@ export function App() {
         tab={tab}
         open={mobileNavOpen}
         showHeader={showMobileHeader}
+        variant={mobileNavVariant}
         onOpenChange={setMobileNavOpen}
         onNavigate={navigateToTab}
         onLogout={logout}
@@ -1053,7 +1221,24 @@ export function App() {
         onLogout={logout}
       />
 
-      <main className={`content ${tab === "messages" || tab === "test-bot" ? "messages-mode" : tab === "orders" ? "orders-mode" : ""}`}>
+      <div className="toast-stack" aria-live="polite" aria-atomic="true">
+        {toasts.map((toast) => (
+          <div key={toast.id} className={`toast ${toast.type}`}>
+            {toast.message}
+          </div>
+        ))}
+      </div>
+
+      <main
+        className={`content ${tab === "messages" || tab === "test-bot" ? "messages-mode" : tab === "orders" ? "orders-mode" : ""}`}
+        onTouchStart={handleContentTouchStart}
+        onTouchMove={handleContentTouchMove}
+        onTouchEnd={handleContentTouchEnd}
+      >
+        <div className={`pull-refresh-indicator ${pullDistance > 0 || contentRefreshing ? "visible" : ""}`}>
+          <RefreshCw size={16} className={contentRefreshing ? "spinning" : ""} />
+          <span>{contentRefreshing ? "Đang làm mới..." : pullDistance >= 72 ? "Thả để làm mới" : "Kéo để làm mới"}</span>
+        </div>
         <header className="page-header">
           <div>
             <p className="eyebrow">Bảng điều khiển</p>
@@ -1776,19 +1961,19 @@ export function App() {
               </div>
               <div className="list">
                 {filteredOrderPageBots.map((bot) => {
-                  const summary = orderSummaryByPage[bot._id];
+                  const summary = orderSummaryByPage[bot.pageId];
                   return (
                     <button
                       key={bot._id}
-                      className={`row ${String(selectedOrderPageId) === String(bot._id) ? "selected" : ""}`}
+                      className={`row ${String(selectedOrderPageId) === String(bot.pageId) ? "selected" : ""}`}
                       onClick={() => {
-                        setOrderPageFilter(bot._id);
+                        setOrderPageFilter(bot.pageId);
                         setOrderCustomerFilter("");
                       }}
                     >
                       <strong>{bot.pageName}</strong>
                       <span>{summary?.count || 0} đơn hàng</span>
-                      <small>{(summary?.totalAmount || 0).toLocaleString("vi-VN")} đ</small>
+                      <small>{(summary?.total || 0).toLocaleString("vi-VN")} đ</small>
                     </button>
                   );
                 })}
@@ -1806,11 +1991,11 @@ export function App() {
                       }
                     >
                       <div className="customer-heading">
-                        <Avatar profile={summary.profile} fallback={summary.customerPsid} />
+                        <Avatar profile={summary.profile} fallback={summary.customerId} />
                         <strong>{summary.customerName}</strong>
                       </div>
                       <span>{summary.count} đơn</span>
-                      <small>{summary.totalAmount.toLocaleString("vi-VN")} đ</small>
+                      <small>{summary.total.toLocaleString("vi-VN")} đ</small>
                     </button>
                   ))}
                 </div>
@@ -1818,7 +2003,7 @@ export function App() {
             </Panel>
 
             <section className="orders-main">
-              <Panel title={pageBots.find((bot) => bot._id === selectedOrderPageId)?.pageName || "Đơn hàng"}>
+              <Panel title={pageBots.find((bot) => bot.pageId === selectedOrderPageId)?.pageName || "Đơn hàng"}>
                 <div className="orders-overview">
                   <article>
                     <span>Tổng đơn</span>
@@ -1826,7 +2011,7 @@ export function App() {
                   </article>
                   <article>
                     <span>Doanh thu</span>
-                    <strong>{(selectedPageOrderSummary?.totalAmount || 0).toLocaleString("vi-VN")} đ</strong>
+                    <strong>{(selectedPageOrderSummary?.total || 0).toLocaleString("vi-VN")} đ</strong>
                   </article>
                   <article>
                     <span>Khách có đơn</span>
@@ -1852,22 +2037,20 @@ export function App() {
                     <div className="table-head">
                       <span>Khách</span>
                       <span>SĐT</span>
+                      <span>Địa chỉ</span>
                       <span>Tổng tiền</span>
-                      <span>Trạng thái</span>
                     </div>
                     {filteredOrders.map((order) => (
                       <button className="table-row order-row" key={order._id} onClick={() => openOrderDialog(order)}>
                         <span>
                           {customerDisplayName({
-                            customerPsid: order.customerPsid,
+                            customerPsid: order.customerId,
                             profile: order.customerProfile
                           })}
                         </span>
-                        <span>{order.phone || "-"}</span>
-                        <span>{order.totalAmount.toLocaleString("vi-VN")} đ</span>
-                        <span>
-                          <StatusBadge status={order.status} />
-                        </span>
+                        <span>{order.phoneNumber || "-"}</span>
+                        <span>{order.address || "-"}</span>
+                        <span>{order.total.toLocaleString("vi-VN")} đ</span>
                       </button>
                     ))}
                   </div>
@@ -1885,11 +2068,7 @@ export function App() {
                   <h2>Cập nhật đơn hàng</h2>
                   <span className="muted-inline">{formatDateTime(selectedOrder.createdAt)}</span>
                 </div>
-                <div className="context-actions">
-                  <button className="danger compact" onClick={deleteSelectedOrder}>
-                    <Trash2 size={16} />
-                    Xóa
-                  </button>
+                <div className="report-export-actions">
                   <button className="ghost-button compact" onClick={closeOrderDialog}>
                     Đóng
                   </button>
@@ -1900,10 +2079,10 @@ export function App() {
                 <article className="order-customer-card">
                   <span>Khách hàng</span>
                   <div className="customer-heading">
-                    <Avatar profile={selectedOrder.customerProfile} fallback={selectedOrder.customerPsid} />
+                    <Avatar profile={selectedOrder.customerProfile} fallback={selectedOrder.customerId} />
                     <strong>
                       {customerDisplayName({
-                        customerPsid: selectedOrder.customerPsid,
+                        customerPsid: selectedOrder.customerId,
                         profile: selectedOrder.customerProfile
                       })}
                     </strong>
@@ -1911,23 +2090,18 @@ export function App() {
                 </article>
                 <label>
                   <span>SĐT</span>
-                  <input value={orderDraft.phone || ""} onChange={(event) => updateOrderDraft({ phone: event.target.value })} />
+                  <input value={orderDraft.phoneNumber || ""} onChange={(event) => updateOrderDraft({ phoneNumber: event.target.value })} />
                 </label>
                 <label>
-                  <span>Trạng thái</span>
-                  <select value={orderDraft.status} onChange={(event) => updateOrderDraft({ status: event.target.value })}>
-                    <option value="draft">draft</option>
-                    <option value="confirmed">confirmed</option>
-                    <option value="fulfilled">fulfilled</option>
-                    <option value="cancelled">cancelled</option>
-                  </select>
+                  <span>Địa chỉ</span>
+                  <input value={orderDraft.address || ""} onChange={(event) => updateOrderDraft({ address: event.target.value })} />
                 </label>
                 <label>
                   <span>Tổng tiền</span>
                   <input
                     type="number"
-                    value={orderDraft.totalAmount || 0}
-                    onChange={(event) => updateOrderDraft({ totalAmount: event.target.value })}
+                    value={orderDraft.total || 0}
+                    onChange={(event) => updateOrderDraft({ total: event.target.value })}
                   />
                 </label>
               </div>
@@ -1966,10 +2140,25 @@ export function App() {
                 ))}
               </div>
 
-              <Textarea label="Ghi chú" value={orderDraft.note} onChange={(value) => updateOrderDraft({ note: value })} />
+              <div className="order-dialog-meta order-dialog-source-meta">
+                <label>
+                  <span>Page</span>
+                  <input value={orderDraft.pageName || ""} onChange={(event) => updateOrderDraft({ pageName: event.target.value })} />
+                </label>
+                <label>
+                  <span>Quảng cáo</span>
+                  <input value={orderDraft.adName || ""} onChange={(event) => updateOrderDraft({ adName: event.target.value })} />
+                </label>
+              </div>
+
+              <Textarea
+                label="Ghi chú khách hàng / yêu cầu chỉnh sửa"
+                value={orderDraft.note || ""}
+                onChange={(value) => updateOrderDraft({ note: value })}
+              />
 
               <div className="context-actions">
-                <button className="primary" onClick={saveSelectedOrder}>
+                <button className="primary" onClick={saveSelectedOrder} disabled={!canEditSelectedOrder}>
                   <Save size={16} />
                   Lưu cập nhật
                 </button>
@@ -1977,6 +2166,9 @@ export function App() {
                   Hủy
                 </button>
               </div>
+              {!canEditSelectedOrder && (
+                <span className="muted-inline">Đơn chỉ được cập nhật trong ngày tạo đơn.</span>
+              )}
             </section>
           </div>
         )}
@@ -2438,12 +2630,147 @@ export function App() {
             setTheme={setTheme}
             showMobileHeader={showMobileHeader}
             setShowMobileHeader={setShowMobileHeader}
+            mobileNavVariant={mobileNavVariant}
+            setMobileNavVariant={setMobileNavVariant}
             runtimeSettings={runtimeSettings}
             setRuntimeSettings={setRuntimeSettings}
             saveRuntimeSettings={saveRuntimeSettings}
           />
         )}
+
+        {tab === "users" && can("users.manage") && (
+          <UsersScreen
+            users={users}
+            roles={roles}
+            editingUser={editingUser}
+            setEditingUser={setEditingUser}
+            pageBots={pageBots}
+            saveUser={saveUser}
+          />
+        )}
+
+        {tab === "roles" && can("roles.manage") && (
+          <RolesScreen
+            roles={roles}
+            permissions={permissions}
+            editingRole={editingRole}
+            setEditingRole={setEditingRole}
+            saveRole={saveRole}
+          />
+        )}
+
+        {tab === "reports" && can("reports.view") && (
+          <section className="report-layout">
+            <Panel title="Bộ lọc báo cáo">
+              <div className="report-filters">
+                <Input label="Từ ngày" type="date" value={reportRange.fromDate} onChange={(value) => setReportRange((current) => ({ ...current, fromDate: value }))} />
+                <Input label="Đến ngày" type="date" value={reportRange.toDate} onChange={(value) => setReportRange((current) => ({ ...current, toDate: value }))} />
+                <button className="primary" onClick={loadOperationsReport}>Xem báo cáo</button>
+              </div>
+            </Panel>
+            <div className="report-summary">
+              <article><span>Tổng tin nhắn</span><strong>{operationsReport?.summary.totalMessages || 0}</strong></article>
+              <article><span>Tin khách</span><strong>{operationsReport?.summary.inboundMessages || 0}</strong></article>
+              <article><span>Tin gửi ra</span><strong>{operationsReport?.summary.outboundMessages || 0}</strong></article>
+              <article><span>Tổng đơn</span><strong>{operationsReport?.summary.totalOrders || 0}</strong></article>
+              <article><span>Doanh thu</span><strong>{(operationsReport?.summary.totalRevenue || 0).toLocaleString("vi-VN")} đ</strong></article>
+            </div>
+            <Panel
+              title="Xuất dữ liệu"
+              action={
+                <div className="context-actions">
+                  <button className="ghost-button compact" onClick={() => exportReport("messages", "csv")}>Tin nhắn CSV</button>
+                  <button className="ghost-button compact" onClick={() => exportReport("messages", "json")}>Tin nhắn JSON</button>
+                  <button className="ghost-button compact" onClick={() => exportReport("messages", "txt")}>Tin nhắn TXT</button>
+                  <button className="ghost-button compact" onClick={() => exportReport("orders", "csv")}>Đơn hàng CSV</button>
+                  <button className="ghost-button compact" onClick={() => exportReport("orders", "json")}>Đơn hàng JSON</button>
+                  <button className="ghost-button compact" onClick={() => exportReport("orders", "txt")}>Đơn hàng TXT</button>
+                </div>
+              }
+            >
+              <span className="muted-inline">
+                Phạm vi: {reportRange.fromDate} đến {reportRange.toDate}
+              </span>
+            </Panel>
+          </section>
+        )}
       </main>
     </div>
   );
+}
+
+function isSameLocalDay(date, now = new Date()) {
+  return getBangkokDayKey(date) === getBangkokDayKey(now);
+}
+
+function userCan(user, permission) {
+  return Boolean(user?.superAdmin || user?.permissions?.includes(permission));
+}
+
+function getErrorMessage(error, fallback) {
+  const message = String(error?.message || "").trim();
+  if (!message) return fallback;
+  try {
+    const parsed = JSON.parse(message);
+    return parsed.message || fallback;
+  } catch {
+    return message;
+  }
+}
+
+function downloadCsv(rows, filename) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(","),
+    ...rows.map((row) =>
+      headers
+        .map((header) => `"${String(row[header] ?? "").replaceAll('"', '""')}"`)
+        .join(",")
+    )
+  ].join("\n");
+  const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadJson(rows, filename) {
+  downloadBlob(JSON.stringify(rows, null, 2), filename, "application/json;charset=utf-8");
+}
+
+function downloadText(rows, filename) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const text = rows
+    .map((row, index) =>
+      [
+        `# ${index + 1}`,
+        ...headers.map((header) => `${header}: ${String(row[header] ?? "")}`)
+      ].join("\n")
+    )
+    .join("\n\n");
+  downloadBlob(text, filename, "text/plain;charset=utf-8");
+}
+
+function downloadBlob(content, filename, type) {
+  const blob = new Blob(["\uFEFF", content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function getBangkokDayKey(date) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(date));
 }

@@ -1,6 +1,111 @@
 import { Moon, Plus, Save, Sun, Trash2 } from "lucide-react";
 import { Editor, EmptyState, Input, Panel, Textarea, ToggleSwitch } from "../ui.jsx";
-import { emptyRule } from "../../constants/defaults.js";
+import { emptyRole, emptyRule, emptyUser } from "../../constants/defaults.js";
+
+export function UsersScreen({ users, roles, editingUser, setEditingUser, pageBots, saveUser }) {
+  return (
+    <section className="workspace-grid">
+      <Panel
+        title="Nhân viên hệ thống"
+        action={
+          <button className="ghost-button" onClick={() => setEditingUser(emptyUser)}>
+            <Plus size={16} />
+            Tạo mới
+          </button>
+        }
+      >
+        <div className="list">
+          {users.length === 0 && <EmptyState title="Chưa có nhân viên" body="Tạo tài khoản để phân quyền theo page." />}
+          {users.map((user) => (
+            <button key={user._id} className={`row ${editingUser._id === user._id ? "selected" : ""}`} onClick={() => setEditingUser({ ...user, roleId: user.roleId?._id || user.roleId || "", password: "" })}>
+              <strong>{user.fullName || user.username}</strong>
+              <span>{user.roleId?.name || "-"}</span>
+              <small>{`${user.pageBotIds?.length || 0} page`}</small>
+            </button>
+          ))}
+        </div>
+      </Panel>
+
+      <Editor title={editingUser._id ? "Cập nhật nhân viên" : "Tạo nhân viên"} onSave={saveUser}>
+        <Input label="Tên đăng nhập" value={editingUser.username} onChange={(value) => setEditingUser({ ...editingUser, username: value })} />
+        <Input label="Họ tên" value={editingUser.fullName} onChange={(value) => setEditingUser({ ...editingUser, fullName: value })} />
+        <Input label={editingUser._id ? "Mật khẩu mới (để trống nếu giữ nguyên)" : "Mật khẩu"} type="password" value={editingUser.password} onChange={(value) => setEditingUser({ ...editingUser, password: value })} />
+        <label>
+          <span>Vai trò</span>
+          <select value={editingUser.roleId || ""} onChange={(event) => setEditingUser({ ...editingUser, roleId: event.target.value })}>
+            <option value="">Chọn vai trò</option>
+            {roles.map((role) => <option key={role._id} value={role._id}>{role.name}</option>)}
+          </select>
+        </label>
+        <label className="checkbox-row">
+          <input type="checkbox" checked={Boolean(editingUser.enabled)} onChange={(event) => setEditingUser({ ...editingUser, enabled: event.target.checked })} />
+          <span>Cho phép đăng nhập</span>
+        </label>
+        <div className="page-permission-list">
+            <span>Page được quản lý</span>
+            {pageBots.map((bot) => (
+              <label key={bot._id} className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={(editingUser.pageBotIds || []).some((id) => String(id) === String(bot._id))}
+                  onChange={(event) => {
+                    const current = editingUser.pageBotIds || [];
+                    setEditingUser({
+                      ...editingUser,
+                      pageBotIds: event.target.checked
+                        ? [...current, bot._id]
+                        : current.filter((id) => String(id) !== String(bot._id))
+                    });
+                  }}
+                />
+                <span>{bot.pageName}</span>
+              </label>
+            ))}
+        </div>
+      </Editor>
+    </section>
+  );
+}
+
+export function RolesScreen({ roles, permissions, editingRole, setEditingRole, saveRole }) {
+  return (
+    <section className="workspace-grid">
+      <Panel title="Vai trò hệ thống" action={<button className="ghost-button" onClick={() => setEditingRole(emptyRole)}><Plus size={16} />Tạo mới</button>}>
+        <div className="list">
+          {roles.map((role) => (
+            <button key={role._id} className={`row ${editingRole._id === role._id ? "selected" : ""}`} onClick={() => setEditingRole(role)}>
+              <strong>{role.name}</strong>
+              <span>{role.slug}</span>
+              <small>{role.permissions?.length || 0} quyền</small>
+            </button>
+          ))}
+        </div>
+      </Panel>
+      <Editor title={editingRole._id ? "Cập nhật vai trò" : "Tạo vai trò"} onSave={saveRole}>
+        <Input label="Tên vai trò" value={editingRole.name} onChange={(value) => setEditingRole({ ...editingRole, name: value })} />
+        <Input label="Mã vai trò" value={editingRole.slug} onChange={(value) => setEditingRole({ ...editingRole, slug: value })} />
+        <div className="page-permission-list">
+          <span>Quyền chức năng</span>
+          {permissions.map((permission) => (
+            <label key={permission.key} className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={(editingRole.permissions || []).includes(permission.key)}
+                onChange={(event) => setEditingRole({
+                  ...editingRole,
+                  permissions: event.target.checked
+                    ? [...(editingRole.permissions || []), permission.key]
+                    : (editingRole.permissions || []).filter((key) => key !== permission.key)
+                })}
+              />
+              <span>{permission.label}</span>
+            </label>
+          ))}
+        </div>
+      </Editor>
+    </section>
+  );
+}
 
 export function RulesScreen({ rules, editingRule, setEditingRule, saveRule, removeRule }) {
   return (
@@ -101,6 +206,8 @@ export function SettingsScreen({
   setTheme,
   showMobileHeader,
   setShowMobileHeader,
+  mobileNavVariant,
+  setMobileNavVariant,
   runtimeSettings,
   setRuntimeSettings,
   saveRuntimeSettings
@@ -125,6 +232,16 @@ export function SettingsScreen({
             onChange={setShowMobileHeader}
             label={showMobileHeader ? "Đang hiện" : "Đang ẩn"}
           />
+        </div>
+        <div className="setting-card">
+          <div>
+            <strong>Thanh điều hướng mobile</strong>
+            <span>Chọn kiểu thanh điều hướng dưới cùng cho mobile app và web responsive.</span>
+          </div>
+          <div className="segmented-control">
+            <button className={mobileNavVariant === "v1" ? "active" : ""} onClick={() => setMobileNavVariant("v1")}>V1</button>
+            <button className={mobileNavVariant === "v2" ? "active" : ""} onClick={() => setMobileNavVariant("v2")}>V2</button>
+          </div>
         </div>
       </Panel>
       <Panel title="Cấu hình phản hồi BOT">

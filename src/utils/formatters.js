@@ -6,6 +6,7 @@ export function pageTitle(tab) {
     promotions: "Chương trình khuyến mãi",
     messages: "Lịch sử tin nhắn",
     orders: "Đơn hàng",
+    reports: "Báo cáo vận hành",
     contexts: "Ngữ cảnh hội thoại",
     simulator: "Giả lập chatbot",
     "test-bot": "Test BOT",
