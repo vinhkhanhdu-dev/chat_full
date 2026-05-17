@@ -523,7 +523,12 @@ button {
   height: calc(100vh - 24px);
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto;
+  align-content: start;
+}
+
+.content.orders-mode .stats-grid {
+  align-self: start;
 }
 
 .page-header {
@@ -1465,7 +1470,7 @@ textarea {
 }
 
 .orders-layout {
-  height: 100%;
+  height: auto;
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
