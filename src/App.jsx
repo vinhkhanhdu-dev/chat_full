@@ -1872,7 +1872,7 @@ export function App() {
                               />
                             )}
                             <div className={`message-bubble ${message.direction}`}>
-                              <p>{message.text}</p>
+                              <MessageContent message={message} />
                               <time>{formatTime(message.createdAt)}</time>
                             </div>
                             {message.direction === "outbound" && (
@@ -2316,7 +2316,7 @@ export function App() {
                           {message.senderType} · {message.direction}
                         </strong>
                         <span>{formatDateTime(message.createdAt)}</span>
-                        <p>{message.text}</p>
+                        <MessageContent message={message} compact />
                       </article>
                     ))}
                   </div>
@@ -2468,7 +2468,7 @@ export function App() {
                       />
                     )}
                     <div className={`message-bubble ${message.direction}`}>
-                      <p>{message.text}</p>
+                      <MessageContent message={message} />
                       <time>{formatTime(message.createdAt)}</time>
                     </div>
                     {message.direction === "outbound" && (
@@ -2773,4 +2773,32 @@ function getBangkokDayKey(date) {
     month: "2-digit",
     day: "2-digit"
   }).format(new Date(date));
+}
+
+function MessageContent({ message, compact = false }) {
+  return (
+    <>
+      {message.text && <p>{message.text}</p>}
+      {Boolean(message.attachments?.length) && (
+        <div className={`message-attachments ${compact ? "compact" : ""}`}>
+          {message.attachments.map((attachment, index) => {
+            if (attachment.type === "image" && attachment.url) {
+              return <img key={`${attachment.type}-${index}`} src={attachment.url} alt="" />;
+            }
+            if (attachment.type === "audio" && attachment.url) {
+              return <audio key={`${attachment.type}-${index}`} controls src={attachment.url} />;
+            }
+            if (attachment.type === "video" && attachment.url) {
+              return <video key={`${attachment.type}-${index}`} controls src={attachment.url} />;
+            }
+            return (
+              <span key={`${attachment.type}-${index}`} className="attachment-chip">
+                {attachment.type === "sticker" ? "Sticker" : attachment.type}
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
 }

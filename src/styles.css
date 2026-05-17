@@ -1254,6 +1254,43 @@ textarea {
   white-space: pre-wrap;
 }
 
+.message-attachments {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.message-attachments img,
+.message-attachments video {
+  display: block;
+  width: min(240px, 100%);
+  max-height: 280px;
+  object-fit: cover;
+  border-radius: 10px;
+}
+
+.message-attachments audio {
+  width: min(260px, 100%);
+}
+
+.message-attachments.compact img,
+.message-attachments.compact video {
+  width: min(160px, 100%);
+  max-height: 180px;
+}
+
+.attachment-chip {
+  width: fit-content;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: var(--surface-soft);
+  font-size: 12px;
+}
+
 .message-bubble time {
   display: block;
   margin-top: 6px;
