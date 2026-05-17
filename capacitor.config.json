@@ -1,0 +1,5 @@
+{
+  "appId": "com.example.app",
+  "appName": "messenger-autoreply-bot-client",
+  "webDir": "dist"
+}
